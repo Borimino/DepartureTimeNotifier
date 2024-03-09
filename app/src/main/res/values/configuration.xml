@@ -1,0 +1,8 @@
+<resources>
+    <integer name="scan_interval_minutes">10</integer>
+    <integer name="forewarning_minutes">10</integer>
+    <integer name="bicycling_time_minutes">0</integer>
+    <integer name="driving_time_minutes">0</integer>
+    <integer name="walking_time_minutes">30</integer>
+    <integer name="transit_time_minutes">120</integer>
+</resources>

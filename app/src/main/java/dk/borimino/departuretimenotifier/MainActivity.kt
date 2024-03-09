@@ -5,11 +5,14 @@ import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -21,27 +24,54 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.app.ActivityCompat
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import dk.borimino.departuretimenotifier.maps.LocationManager
+import dk.borimino.departuretimenotifier.maps.MapsManager
 import dk.borimino.departuretimenotifier.ui.theme.DepartureTimeNotifierTheme
+import dk.borimino.departuretimenotifier.workers.MainWorker
+import dk.borimino.departuretimenotifier.workers.NotificationWorker
+import java.util.Date
+import java.util.concurrent.TimeUnit
+import android.app.ActivityManager
+import android.app.Notification
+import android.graphics.Color
+import android.os.Handler
+import android.os.HandlerThread
+import androidx.core.app.NotificationCompat
+import dk.borimino.departuretimenotifier.workers.MemoryHolder
 
-val CHANNEL_ID = "DEPARTURE_TIME_NOTIFICATION_CHANNEL_ID"
-val PERMISSION_REQUEST_CODE = 1729
-val LOG_TAG = "DEP_TIME_NOTF"
+
+const val CHANNEL_ID = "DEPARTURE_TIME_NOTIFICATION_CHANNEL_ID"
+const val CHANNEL_ID_PERSISTENT = "DEPARTURE_TIME_NOTIFICATION_PERSISTENT_CHANNEL_ID"
+const val PERMISSION_REQUEST_CODE = 1729
+const val LOG_TAG = "DEP_TIME_NOTF"
 
 class MainActivity : ComponentActivity() {
-    private lateinit var alarmManager: AlarmManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         createNotificationChannel()
         checkPermission()
-        alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
-        val intent = Intent(this, MyWorker::class.java)
-        val pendingIntent = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
-        alarmManager.setInexactRepeating(AlarmManager.RTC_WAKEUP,
-            0,
-            5*60*1000,
-            pendingIntent)
-        Log.d(LOG_TAG, "Set alarmManager")
+        //Log.d(LOG_TAG, "Checked permissions")
+        startService(Intent(this, MemoryHolder::class.java))
+        bindService(Intent(this, MemoryHolder::class.java), object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            }
+            override fun onServiceDisconnected(name: ComponentName?) {
+            }
+        }, Context.BIND_AUTO_CREATE)
+        //Log.d(LOG_TAG, "Created MemoryHolder")
+        startService(Intent(this, LocationManager::class.java))
+        bindService(Intent(this, LocationManager::class.java), object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            }
+            override fun onServiceDisconnected(name: ComponentName?) {
+            }
+        }, Context.BIND_AUTO_CREATE)
+        //Log.d(LOG_TAG, "Set LocationManager")
+        MapsManager.setup(this)
+        //Log.d(LOG_TAG, "Setup MapsManager")
         setContent {
             DepartureTimeNotifierTheme {
                 // A surface container using the 'background' color from the theme
@@ -56,48 +86,82 @@ class MainActivity : ComponentActivity() {
         if (ActivityCompat.checkSelfPermission(
                 this,
                 Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.SCHEDULE_EXACT_ALARM
+            ) != PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_CALENDAR
+            ) != PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.INTERNET
+            ) != PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.VIBRATE
+            ) != PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.FOREGROUND_SERVICE
+            ) != PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.FOREGROUND_SERVICE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), PERMISSION_REQUEST_CODE)
-                Log.d(LOG_TAG, "Requested permission")
+                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.SCHEDULE_EXACT_ALARM, Manifest.permission.ACCESS_BACKGROUND_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.READ_CALENDAR, Manifest.permission.INTERNET, Manifest.permission.VIBRATE, Manifest.permission.FOREGROUND_SERVICE, Manifest.permission.FOREGROUND_SERVICE_LOCATION), PERMISSION_REQUEST_CODE)
+                //Log.d(LOG_TAG, "Requested permission")
             }
             return
         }
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        Log.d(LOG_TAG, "Received permissions" + grantResults.contentToString())
 
     }
 
     private fun createNotificationChannel() {
-        // Create the NotificationChannel, but only on API 26+ because
-        // the NotificationChannel class is not in the Support Library.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val name = getString(R.string.channel_name)
-            val descriptionText = getString(R.string.channel_description)
-            val importance = NotificationManager.IMPORTANCE_DEFAULT
-            val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
-                description = descriptionText
-            }
-            // Register the channel with the system.
-            val notificationManager: NotificationManager =
-                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
-            Log.d(LOG_TAG, "Created NotificationChannel")
+        val name = getString(R.string.channel_name)
+        val descriptionText = getString(R.string.channel_description)
+        val channel = NotificationChannel(CHANNEL_ID, name, NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = descriptionText
+            enableVibration(true)
+            setShowBadge(false)
         }
+        // Register the channel with the system.
+        val notificationManager: NotificationManager =
+            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.createNotificationChannel(channel)
+        //Log.d(LOG_TAG, "Created NotificationChannel")
+
+        val channelPersistent = NotificationChannel(CHANNEL_ID_PERSISTENT, "Background Service", NotificationManager.IMPORTANCE_LOW).apply {
+            lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+            setShowBadge(false)
+        }
+        notificationManager.createNotificationChannel(channelPersistent)
     }
 
 }
