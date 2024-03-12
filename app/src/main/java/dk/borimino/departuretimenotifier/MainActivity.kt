@@ -38,6 +38,7 @@ import android.app.Notification
 import android.graphics.Color
 import android.os.Handler
 import android.os.HandlerThread
+import androidx.compose.foundation.layout.Column
 import androidx.core.app.NotificationCompat
 import dk.borimino.departuretimenotifier.workers.MemoryHolder
 
@@ -49,6 +50,8 @@ const val LOG_TAG = "DEP_TIME_NOTF"
 
 class MainActivity : ComponentActivity() {
 
+    lateinit var memoryHolder: MemoryHolder
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         createNotificationChannel()
@@ -57,6 +60,18 @@ class MainActivity : ComponentActivity() {
         startService(Intent(this, MemoryHolder::class.java))
         bindService(Intent(this, MemoryHolder::class.java), object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                memoryHolder = (service as MemoryHolder.LocalBinder).getService()
+                setContent {
+                    DepartureTimeNotifierTheme {
+                        // A surface container using the 'background' color from the theme
+                        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                            Column {
+                                Greeting("Markus")
+                                Log(logLines = memoryHolder.getLogLines())
+                            }
+                        }
+                    }
+                }
             }
             override fun onServiceDisconnected(name: ComponentName?) {
             }
@@ -172,6 +187,19 @@ fun Greeting(name: String, modifier: Modifier = Modifier) {
             text = "Hello $name!",
             modifier = modifier
     )
+}
+
+@Composable
+fun Log(logLines: List<String>) {
+    Text(
+        text = "Log:"
+    )
+    logLines.forEach {
+        Text(
+            text = it,
+            modifier = Modifier
+        )
+    }
 }
 
 @Preview(showBackground = true)

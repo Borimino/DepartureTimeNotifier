@@ -132,12 +132,13 @@ class MainWorker : BroadcastReceiver() {
                     }
                     if (directions == null) {
                         Log.d(LOG_TAG, "No directions found")
+                        memoryHolder.addLogLine("No directions found from $location to ${event.location}")
                     } else {
                         Log.d(LOG_TAG, "Directions are of type ${directions.mode}")
                     }
                     memoryHolder.alarmIds.keys.filter { pair -> pair.second == event }
                         .forEach { key -> removeAlarmForEvent(memoryHolder.alarmIds[key]) }
-                    val alarmId = setAlarmForEvent(directions, event, context)
+                    val alarmId = setAlarmForEvent(directions, event, context, memoryHolder)
                     memoryHolder.alarmIds[Pair(location, event)] = alarmId
                 }
             }
@@ -146,7 +147,7 @@ class MainWorker : BroadcastReceiver() {
         }
     }
 
-    private fun setAlarmForEvent(directions: Directions?, event: Event, context: Context): PendingIntent {
+    private fun setAlarmForEvent(directions: Directions?, event: Event, context: Context, memoryHolder: MemoryHolder): PendingIntent {
         val alarmTime: Long = if (directions == null) {
             Log.d(LOG_TAG, "Event without directions")
             event.time.toEpochMilli() - TimeUnit.MINUTES.toMillis(context.resources.getInteger(R.integer.forewarning_minutes).toLong())
@@ -173,6 +174,7 @@ class MainWorker : BroadcastReceiver() {
             alarmTime,
             pendingIntent)
         Log.d(LOG_TAG, "Alarm set for event")
+        memoryHolder.addLogLine("Alarm set for event at ${Instant.ofEpochMilli(alarmTime)}")
         return pendingIntent
     }
 

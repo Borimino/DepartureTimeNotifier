@@ -153,6 +153,8 @@ object MapsManager {
 
         val allDirections: List<Pair<Long, Directions?>> = listOf(Pair(modePreferences.bicyclingTime, directionsBicycling), Pair(modePreferences.drivingTime, directionsDriving), Pair(modePreferences.transitTime, directionsTransit), Pair(modePreferences.walkingTime, directionsWalking))
 
+        Log.d(LOG_TAG, allDirections.sortedBy { it.first }.filter {it.second != null}.toString())
+
         return allDirections.sortedBy { it.first }.filter { it.second != null }
             .firstOrNull() { it.first >= it.second!!.totalDurationInSeconds }?.second
     }

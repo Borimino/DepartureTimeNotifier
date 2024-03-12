@@ -94,10 +94,10 @@ class LocationManager: Service() {
 
     private fun createModePreferences(): ModePreferences {
         return ModePreferences(
-            resources.getInteger(R.integer.driving_time_minutes).toLong(),
-            resources.getInteger(R.integer.walking_time_minutes).toLong(),
-            resources.getInteger(R.integer.bicycling_time_minutes).toLong(),
-            resources.getInteger(R.integer.transit_time_minutes).toLong()
+            TimeUnit.MINUTES.toSeconds(resources.getInteger(R.integer.driving_time_minutes).toLong()),
+            TimeUnit.MINUTES.toSeconds(resources.getInteger(R.integer.walking_time_minutes).toLong()),
+            TimeUnit.MINUTES.toSeconds(resources.getInteger(R.integer.bicycling_time_minutes).toLong()),
+            TimeUnit.MINUTES.toSeconds(resources.getInteger(R.integer.transit_time_minutes).toLong())
         )
     }
 

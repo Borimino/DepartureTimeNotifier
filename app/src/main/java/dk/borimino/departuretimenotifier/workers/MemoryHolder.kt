@@ -12,10 +12,24 @@ import dk.borimino.departuretimenotifier.domain.Location
 import java.time.Instant
 
 class MemoryHolder: Service() {
+    private val MAX_LOG_LINES = 100
 
     val alarmIds : MutableMap<Pair<Location, Event>, PendingIntent> = mutableMapOf()
 
     val notifiedEvents : MutableList<Pair<String, Instant>> = mutableListOf() //TODO: Clear this up once event has been held
+
+    private val logLines : MutableList<String> = mutableListOf()
+
+    fun addLogLine(logLine: String) {
+        logLines.add(logLine)
+        while (logLines.size >= MAX_LOG_LINES) {
+            logLines.removeAt(0)
+        }
+    }
+
+    fun getLogLines() : List<String> {
+        return logLines
+    }
 
     fun clearEvent(eventName: String, eventTime: Instant) {
         alarmIds.filter { it.key.second.title == eventName && it.key.second.time == eventTime }.forEach {
