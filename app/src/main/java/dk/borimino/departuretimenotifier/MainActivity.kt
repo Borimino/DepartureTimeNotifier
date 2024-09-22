@@ -1,10 +1,8 @@
 package dk.borimino.departuretimenotifier
 
 import android.Manifest
-import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -24,23 +22,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.app.ActivityCompat
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationServices
 import dk.borimino.departuretimenotifier.maps.LocationManager
 import dk.borimino.departuretimenotifier.maps.MapsManager
 import dk.borimino.departuretimenotifier.ui.theme.DepartureTimeNotifierTheme
-import dk.borimino.departuretimenotifier.workers.MainWorker
-import dk.borimino.departuretimenotifier.workers.NotificationWorker
-import java.util.Date
-import java.util.concurrent.TimeUnit
-import android.app.ActivityManager
 import android.app.Notification
-import android.graphics.Color
-import android.os.Handler
-import android.os.HandlerThread
 import androidx.compose.foundation.layout.Column
-import androidx.core.app.NotificationCompat
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.ui.unit.sp
 import dk.borimino.departuretimenotifier.workers.MemoryHolder
+import me.zhanghai.compose.preference.ProvidePreferenceLocals
+import me.zhanghai.compose.preference.textFieldPreference
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 
 const val CHANNEL_ID = "DEPARTURE_TIME_NOTIFICATION_CHANNEL_ID"
@@ -54,23 +50,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.d(LOG_TAG, this.localClassName)
         createNotificationChannel()
         checkPermission()
         //Log.d(LOG_TAG, "Checked permissions")
+        MapsManager.setup(this)
+        Log.d(LOG_TAG, "Setup MapsManager")
         startService(Intent(this, MemoryHolder::class.java))
         bindService(Intent(this, MemoryHolder::class.java), object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
                 memoryHolder = (service as MemoryHolder.LocalBinder).getService()
                 setContent {
-                    DepartureTimeNotifierTheme {
-                        // A surface container using the 'background' color from the theme
-                        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                            Column {
-                                Greeting("Markus")
-                                Log(logLines = memoryHolder.getLogLines())
-                            }
-                        }
-                    }
+                    MainScreen(memoryHolder = memoryHolder)
                 }
             }
             override fun onServiceDisconnected(name: ComponentName?) {
@@ -85,13 +76,11 @@ class MainActivity : ComponentActivity() {
             }
         }, Context.BIND_AUTO_CREATE)
         //Log.d(LOG_TAG, "Set LocationManager")
-        MapsManager.setup(this)
-        //Log.d(LOG_TAG, "Setup MapsManager")
         setContent {
             DepartureTimeNotifierTheme {
                 // A surface container using the 'background' color from the theme
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    Greeting("Markus")
+                    Greeting(Instant.now())
                 }
             }
         }
@@ -179,26 +168,91 @@ class MainActivity : ComponentActivity() {
         notificationManager.createNotificationChannel(channelPersistent)
     }
 
+
+    @Composable
+    fun MainScreen(memoryHolder: MemoryHolder) {
+        DepartureTimeNotifierTheme {
+            // A surface container using the 'background' color from the theme
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Column {
+                    Greeting(memoryHolder.lastScanTime)
+                    Log(memoryHolder.getLogLines()) {
+                        memoryHolder.clearLogLines()
+                        setContent { MainScreen(memoryHolder = memoryHolder) }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
+fun Greeting(lastScanTime: Instant?, modifier: Modifier = Modifier) {
     Text(
-            text = "Hello $name!",
+            text = "Last scan time was ${lastScanTime?.truncatedTo(ChronoUnit.MILLIS)}!",
             modifier = modifier
     )
+    ProvidePreferenceLocals {
+        LazyColumn() {
+            textFieldPreference(
+                key = "drivingTime",
+                defaultValue = 0,
+                title = { Text(text = "Driving time in minutes")},
+                textToValue = String::toLong
+            )
+            textFieldPreference(
+                key = "walkingTime",
+                defaultValue = 30,
+                title = { Text(text = "Walking time in minutes")},
+                textToValue = String::toLong
+            )
+            textFieldPreference(
+                key = "bicyclingTime",
+                defaultValue = 0,
+                title = { Text(text = "Bicycling time in minutes")},
+                textToValue = String::toLong
+            )
+            textFieldPreference(
+                key = "transitTime",
+                defaultValue = 120,
+                title = { Text(text = "Transit time in minutes")},
+                textToValue = String::toLong
+            )
+            textFieldPreference(
+                key = "locationSearchRegex",
+                defaultValue = "",
+                title = { Text(text = "Locations to be replaced (regex). Separated by ;")},
+                textToValue = String::toString
+            )
+            textFieldPreference(
+                key = "locationReplace",
+                defaultValue = "",
+                title = { Text(text = "Locations to replace with. Separated by ;")},
+                textToValue = String::toString
+            )
+        }
+    }
 }
 
 @Composable
-fun Log(logLines: List<String>) {
+fun Log(logLines: List<String>, clearLog: () -> Unit) {
     Text(
         text = "Log:"
     )
-    logLines.forEach {
-        Text(
-            text = it,
-            modifier = Modifier
-        )
+    Column (
+        modifier = Modifier.verticalScroll(rememberScrollState())
+    ) {
+        logLines.forEach {
+            Text(
+                text = it,
+                modifier = Modifier,
+                fontSize = 10.sp,
+                lineHeight = 12.sp
+            )
+        }
+        Button(onClick = { clearLog() }) {
+            Text(text = "Clear log")
+        }
     }
 }
 
@@ -206,6 +260,6 @@ fun Log(logLines: List<String>) {
 @Composable
 fun GreetingPreview() {
     DepartureTimeNotifierTheme {
-        Greeting("Android")
+        Greeting(Instant.now())
     }
 }

@@ -15,6 +15,9 @@ import dk.borimino.departuretimenotifier.CHANNEL_ID
 import dk.borimino.departuretimenotifier.LOG_TAG
 import dk.borimino.departuretimenotifier.R
 import java.time.Instant
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.random.Random
 
 /**
@@ -33,52 +36,64 @@ class NotificationWorker : BroadcastReceiver() {
         }
         Log.d(LOG_TAG, "Gotten MemoryHolder with ${memoryHolder.alarmIds.size} entries")
 
-        val eventName = intent!!.getStringExtra("eventName")
-        val eventTime = Instant.ofEpochMilli(intent.getLongExtra("eventTime", 0))
-        val mode = intent.getStringExtra("mode")
-        val destination = intent.getStringExtra("destination")
-        val mapsMode = when (mode) {
-            "bicycling" -> "b"
-            "driving" -> "d"
-            "walking" -> "w"
-            "transit" -> "t"
-            else -> "d"
-        }
-
-        val actionIntent =
-            if (mode == "transit") {
-                Intent(
-                    Intent.ACTION_VIEW,
-                    Uri.parse("geo:0,0?q=$destination")
-                )
-            } else {
-                Intent(
-                    Intent.ACTION_VIEW,
-                    Uri.parse("google.navigation:q=$destination&mode=$mapsMode")
-                )
+        try {
+            val eventName = intent!!.getStringExtra("eventName")
+            val eventTime = Instant.ofEpochMilli(intent.getLongExtra("eventTime", 0))
+            val departureTime = Instant.ofEpochMilli(intent.getLongExtra("departureTime", 0))
+            val mode = intent.getStringExtra("mode")
+            val destination = intent.getStringExtra("destination")
+            val mapsMode = when (mode) {
+                "bicycling" -> "b"
+                "driving" -> "d"
+                "walking" -> "w"
+                "transit" -> "t"
+                else -> "d"
             }
-        actionIntent.setPackage("com.google.android.apps.maps")
-        val builder = NotificationCompat.Builder(context!!, CHANNEL_ID)
-            .setSmallIcon(R.drawable.event_icon_11)
-            .setContentTitle(eventName)
-            .setContentText("Start $mode in ${context.resources.getInteger(R.integer.forewarning_minutes)} minutes. Click here for Google Maps instructions")
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setContentIntent(PendingIntent.getActivity(context, Random.nextInt(), actionIntent, PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-            .setAutoCancel(true)
-        with(NotificationManagerCompat.from(context)) {
-            if (ActivityCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                Log.w(LOG_TAG, "Permission not granted")
-                return
-            }
-            notify(Random.nextInt(), builder.build())
-            Log.d(LOG_TAG, "Sent notification")
-        }
 
-        memoryHolder.clearEvent(eventName!!, eventTime)
-        memoryHolder.notifiedEvents.add(Pair(eventName, eventTime))
+            val actionIntent =
+                if (mode == "transit") {
+                    Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("geo:0,0?q=$destination")
+                    )
+                } else {
+                    Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("google.navigation:q=$destination&mode=$mapsMode")
+                    )
+                }
+            actionIntent.setPackage("com.google.android.apps.maps")
+            val builder = NotificationCompat.Builder(context!!, CHANNEL_ID)
+                .setSmallIcon(R.drawable.event_icon_11)
+                .setContentTitle(eventName)
+                .setContentText("Start $mode at ${LocalTime.ofInstant(departureTime, ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))}. Click here for Google Maps instructions")
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setContentIntent(
+                    PendingIntent.getActivity(
+                        context,
+                        Random.nextInt(),
+                        actionIntent,
+                        PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                )
+                .setAutoCancel(true)
+            with(NotificationManagerCompat.from(context)) {
+                if (ActivityCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    Log.w(LOG_TAG, "Permission not granted")
+                    return
+                }
+                notify(Random.nextInt(), builder.build())
+                Log.d(LOG_TAG, "Sent notification")
+            }
+
+            memoryHolder.clearEvent(eventName!!, eventTime)
+            memoryHolder.notifiedEvents.add(Pair(eventName, eventTime))
+        } catch (e: Exception) {
+            memoryHolder.addLogLine((e.stackTraceToString()))
+        }
     }
 }

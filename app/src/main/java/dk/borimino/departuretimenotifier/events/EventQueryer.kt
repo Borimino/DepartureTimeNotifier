@@ -1,6 +1,7 @@
 package dk.borimino.departuretimenotifier.events
 
 import android.content.ContentResolver
+import android.content.ContentUris
 import android.provider.CalendarContract
 import android.util.Log
 import dk.borimino.departuretimenotifier.LOG_TAG
@@ -9,21 +10,21 @@ import java.time.Instant
 
 object EventQueryer {
     private val EVENT_PROJECTION = arrayOf(
-        CalendarContract.Events.DTSTART,
-        CalendarContract.Events.EVENT_LOCATION,
-        CalendarContract.Events.TITLE
+        CalendarContract.Instances.BEGIN,
+        CalendarContract.Instances.EVENT_LOCATION,
+        CalendarContract.Instances.TITLE
     )
 
-    private const val PROJECTION_DTSTART_INDEX = 0
+    private const val PROJECTION_BEGIN_INDEX = 0
     private const val PROJECTION_LOCATION_INDEX = 1
     private const val PROJECTION_TITLE_INDEX = 2
 
     fun getEventsFromUntil(from: Instant, to: Instant, contentResolver: ContentResolver): List<Event> {
-        val uri = CalendarContract.Events.CONTENT_URI
-        val selection = "((${CalendarContract.Events.DTSTART} >= ?) AND (${CalendarContract.Events.DTSTART} <= ?) AND (${CalendarContract.Events.EVENT_LOCATION} != ''))"
-        val selectionArgs = arrayOf(from.toEpochMilli().toString(), to.toEpochMilli().toString())
-        Log.d(LOG_TAG, "Prepared parameters for event-gathering: ${selectionArgs.map { it }}")
-        val cursor = contentResolver.query(uri, EVENT_PROJECTION, selection, selectionArgs, CalendarContract.Events.DTSTART + " ASC")
+        val uriBuilder = CalendarContract.Instances.CONTENT_URI.buildUpon()
+        ContentUris.appendId(uriBuilder, from.toEpochMilli())
+        ContentUris.appendId(uriBuilder, to.toEpochMilli())
+        val selection = "(${CalendarContract.Instances.EVENT_LOCATION} != '')"
+        val cursor = contentResolver.query(uriBuilder.build(), EVENT_PROJECTION, selection, null, CalendarContract.Instances.BEGIN + " ASC")
             ?: return emptyList()
 
         Log.d(LOG_TAG, "Gotten cursor with ${cursor.count} elements")
@@ -31,8 +32,8 @@ object EventQueryer {
         while (cursor.moveToNext()) {
             Log.d(LOG_TAG, "Handling event")
             // get values
-            val dtStart = cursor.getString(PROJECTION_DTSTART_INDEX)
-            val start = Instant.ofEpochMilli(dtStart.toLong())
+            val begin = cursor.getString(PROJECTION_BEGIN_INDEX)
+            val start = Instant.ofEpochMilli(begin.toLong())
             val eventLocation = cursor.getString(PROJECTION_LOCATION_INDEX)
             val title = cursor.getString(PROJECTION_TITLE_INDEX)
 

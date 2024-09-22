@@ -1,22 +1,13 @@
 package dk.borimino.departuretimenotifier.workers
 
-import android.annotation.SuppressLint
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.ServiceConnection
 import android.os.Build
-import android.os.IBinder
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.ComponentActivity
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationServices
 import dk.borimino.departuretimenotifier.LOG_TAG
 import dk.borimino.departuretimenotifier.R
 import dk.borimino.departuretimenotifier.domain.Directions
@@ -24,12 +15,8 @@ import dk.borimino.departuretimenotifier.domain.Event
 import dk.borimino.departuretimenotifier.domain.Location
 import dk.borimino.departuretimenotifier.domain.ModePreferences
 import dk.borimino.departuretimenotifier.events.EventQueryer
-import dk.borimino.departuretimenotifier.maps.LocationManager
 import dk.borimino.departuretimenotifier.maps.MapsManager
-import java.math.RoundingMode
-import java.text.DecimalFormat
 import java.time.Instant
-import java.util.Date
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import kotlin.random.Random
@@ -47,6 +34,15 @@ class MainWorker : BroadcastReceiver() {
     private lateinit var alarmManager: AlarmManager
 
     override fun onReceive(context: Context?, intent: Intent?) {
+        val memoryHolder = (peekService(
+            context,
+            Intent(context, MemoryHolder::class.java)
+        ) as MemoryHolder.LocalBinder?)?.getService()
+        if (memoryHolder == null) {
+            Log.e(LOG_TAG, "No MemoryHolder service is running")
+            return
+        }
+        Log.d(LOG_TAG, "Gotten MemoryHolder with ${memoryHolder.alarmIds.size} entries")
         try {
             if (context == null) {
                 Log.e(LOG_TAG, "No context in MainWorker")
@@ -105,45 +101,63 @@ class MainWorker : BroadcastReceiver() {
                 intent.getDoubleExtra("precise_longitude", 0.0),
                 intent.getDoubleExtra("precise_latitude", 0.0)
             )
-            val memoryHolder = (peekService(
-                context,
-                Intent(context, MemoryHolder::class.java)
-            ) as MemoryHolder.LocalBinder?)?.getService()
-            if (memoryHolder == null) {
-                Log.e(LOG_TAG, "No MemoryHolder service is running")
-                return
-            }
-            Log.d(LOG_TAG, "Gotten MemoryHolder with ${memoryHolder.alarmIds.size} entries")
 
             // For each event
             events.filter { event ->
                 memoryHolder.notifiedEvents.none { event.title == it.first && event.time == it.second } //Don't notify about events that have already had a notification shown
             }.forEach { event ->
                 thread {
-                    // If already saved
-                    if (memoryHolder.alarmIds.containsKey(Pair(location, event))) {
-                        Log.d(LOG_TAG, "Alarm already found")
-                        return@thread
+                    try {
+                        if (memoryHolder.notifiedEvents.contains(Pair(event.title, event.time))) {
+                            memoryHolder.addLogLine("Already notified event " + event.title)
+                            return@thread
+                        }
+                        val sharedPreferences = context.getSharedPreferences(
+                            "dk.borimino.departuretimenotifier_preferences",
+                            Context.MODE_PRIVATE
+                        )
+                        val locationSearchRegexes =
+                            (sharedPreferences.getString("locationSearchRegex", "") ?: "").split(";")
+                        val locationReplacees =
+                            (sharedPreferences.getString("locationReplace", "") ?: "").split(";")
+                        locationSearchRegexes.forEachIndexed { index, value ->
+                            if (locationReplacees.size > index) {
+                                event.location = event.location.replace(value, locationReplacees[index])
+                            }
+                        }
+                        // If already saved
+                        if (memoryHolder.alarmIds.containsKey(Pair(location, event))) {
+                            Log.d(LOG_TAG, "Alarm already found")
+                            return@thread
+                        }
+                        val directions =
+                            try {
+                                MapsManager.getPreferedDistance(preciseLocation, event, modePreferences)
+                            } catch (e: UninitializedPropertyAccessException) {
+                                MapsManager.setup(context)
+                                MapsManager.getPreferedDistance(preciseLocation, event, modePreferences)
+                            }
+                        if (directions == null) {
+                            Log.d(LOG_TAG, "No directions found")
+                            memoryHolder.addLogLine("No directions found from $location to ${event.location}")
+                            memoryHolder.alarmIds[Pair(location, event)] = null
+                            return@thread
+                        } else {
+                            Log.d(LOG_TAG, "Directions are of type ${directions.mode}")
+                        }
+                        memoryHolder.alarmIds.keys.filter { pair -> pair.second == event }
+                            .forEach { key -> removeAlarmForEvent(memoryHolder.alarmIds[key]) }
+                        memoryHolder.addLogLine("Currently at $preciseLocation near $location")
+                        val alarmId = setAlarmForEvent(directions, event, context, memoryHolder)
+                        memoryHolder.alarmIds[Pair(location, event)] = alarmId
+                    } catch (e: Exception) {
+                        memoryHolder.addLogLine((e.stackTraceToString()))
                     }
-                    val directions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        MapsManager.getPreferedDistance(preciseLocation, event, modePreferences)
-                    } else {
-                        MapsManager.getPreferedDistance(preciseLocation, event, modePreferences)
-                    }
-                    if (directions == null) {
-                        Log.d(LOG_TAG, "No directions found")
-                        memoryHolder.addLogLine("No directions found from $location to ${event.location}")
-                    } else {
-                        Log.d(LOG_TAG, "Directions are of type ${directions.mode}")
-                    }
-                    memoryHolder.alarmIds.keys.filter { pair -> pair.second == event }
-                        .forEach { key -> removeAlarmForEvent(memoryHolder.alarmIds[key]) }
-                    val alarmId = setAlarmForEvent(directions, event, context, memoryHolder)
-                    memoryHolder.alarmIds[Pair(location, event)] = alarmId
                 }
             }
+            memoryHolder.lastScanTime = Instant.now()
         } catch (e: Exception) {
-            Toast.makeText(context, e.message, Toast.LENGTH_LONG).show()
+            memoryHolder.addLogLine(e.stackTraceToString())
         }
     }
 
@@ -162,7 +176,8 @@ class MainWorker : BroadcastReceiver() {
 
         val intent = Intent(context, NotificationWorker::class.java)
         intent.putExtra("eventName", event.title)
-        intent.putExtra("eventTime", event.time.toEpochMilli())
+        intent.putExtra("eventTime", event.time)
+        intent.putExtra("departureTime", alarmTime + TimeUnit.MINUTES.toMillis(context.resources.getInteger(R.integer.forewarning_minutes).toLong()))
         if (directions == null) {
             intent.putExtra("mode", "walking")
         } else {
@@ -170,11 +185,25 @@ class MainWorker : BroadcastReceiver() {
         }
         intent.putExtra("destination", event.location)
         val pendingIntent = PendingIntent.getBroadcast(context, Random.nextInt(), intent, PendingIntent.FLAG_IMMUTABLE)
-        alarmManager.set(AlarmManager.RTC_WAKEUP,
-            alarmTime,
-            pendingIntent)
+        try {
+            alarmManager.setExact(
+                AlarmManager.RTC,
+                alarmTime,
+                pendingIntent
+            )
+        } catch (e: SecurityException) {
+            if (e.message != null) {
+                memoryHolder.addLogLine(e.message!!)
+            }
+            alarmManager.set(
+                AlarmManager.RTC,
+                alarmTime,
+                pendingIntent
+            )
+        }
         Log.d(LOG_TAG, "Alarm set for event")
         memoryHolder.addLogLine("Alarm set for event at ${Instant.ofEpochMilli(alarmTime)}")
+        memoryHolder.addLogLine("Alarm set for event at $alarmTime")
         return pendingIntent
     }
 

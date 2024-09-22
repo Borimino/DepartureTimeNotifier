@@ -5,6 +5,6 @@ import java.time.Instant
 data class Event(
     val title: String,
     val time: Instant,
-    val location: String
+    var location: String
     ) {
 }

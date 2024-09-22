@@ -6,29 +6,34 @@ import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
 import android.util.Log
+import androidx.room.Room
 import dk.borimino.departuretimenotifier.LOG_TAG
+import dk.borimino.departuretimenotifier.database.LogLine
+import dk.borimino.departuretimenotifier.database.LogLineDAO
+import dk.borimino.departuretimenotifier.database.LogLineDatabase
 import dk.borimino.departuretimenotifier.domain.Event
 import dk.borimino.departuretimenotifier.domain.Location
 import java.time.Instant
+import java.time.temporal.ChronoUnit
+import java.util.UUID
 
 class MemoryHolder: Service() {
-    private val MAX_LOG_LINES = 100
-
-    val alarmIds : MutableMap<Pair<Location, Event>, PendingIntent> = mutableMapOf()
+    val alarmIds : MutableMap<Pair<Location, Event>, PendingIntent?> = mutableMapOf()
 
     val notifiedEvents : MutableList<Pair<String, Instant>> = mutableListOf() //TODO: Clear this up once event has been held
 
-    private val logLines : MutableList<String> = mutableListOf()
+    var lastScanTime : Instant? = null
+
+    lateinit var db : LogLineDatabase
+    lateinit var logLineDao : LogLineDAO
+
 
     fun addLogLine(logLine: String) {
-        logLines.add(logLine)
-        while (logLines.size >= MAX_LOG_LINES) {
-            logLines.removeAt(0)
-        }
+        logLineDao.insert(LogLine(UUID.randomUUID().leastSignificantBits, logLine, Instant.now().truncatedTo(ChronoUnit.MILLIS).toString()))
     }
 
     fun getLogLines() : List<String> {
-        return logLines
+        return logLineDao.getAll().sortedBy { logLine: LogLine -> logLine.time }.map { logLine: LogLine -> logLine.time + ": " + logLine.line }
     }
 
     fun clearEvent(eventName: String, eventTime: Instant) {
@@ -38,6 +43,11 @@ class MemoryHolder: Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        db = Room.databaseBuilder(
+            this,
+            LogLineDatabase::class.java, "logline"
+        ).allowMainThreadQueries().build()
+        logLineDao = db.logLineDAO()
         Log.d(LOG_TAG, "MemoryHolder started")
         return START_STICKY
     }
@@ -45,6 +55,7 @@ class MemoryHolder: Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.d(LOG_TAG, "MemoryHolder destroyed")
+        addLogLine("MemoryHolder destroyed")
     }
 
     private val binder = LocalBinder()
@@ -55,5 +66,9 @@ class MemoryHolder: Service() {
 
     override fun onBind(intent: Intent?): IBinder {
         return binder
+    }
+
+    fun clearLogLines() {
+        logLineDao.deleteAll()
     }
 }
