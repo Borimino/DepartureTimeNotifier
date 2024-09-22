@@ -5,7 +5,6 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 import androidx.activity.ComponentActivity
 import dk.borimino.departuretimenotifier.LOG_TAG
@@ -50,7 +49,7 @@ class MainWorker : BroadcastReceiver() {
             }
             Log.d(LOG_TAG, "Received in MainWorker")
             alarmManager = context.getSystemService(ComponentActivity.ALARM_SERVICE) as AlarmManager
-            val modePreferences = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val modePreferences =
                 intent!!.getSerializableExtra("ModePreferences", ModePreferences::class.java)
                     ?: ModePreferences(
                         0,
@@ -58,15 +57,6 @@ class MainWorker : BroadcastReceiver() {
                         0,
                         TimeUnit.HOURS.toSeconds(2)
                     )
-            } else {
-                (intent!!.getSerializableExtra("ModePreferences") as ModePreferences?)
-                    ?: ModePreferences(
-                        0,
-                        TimeUnit.MINUTES.toSeconds(30),
-                        0,
-                        TimeUnit.HOURS.toSeconds(2)
-                    )
-            }
             Log.d(LOG_TAG, "Prepared objects")
             // Get list of future events
             val events = EventQueryer.getEventsFromUntil(
@@ -176,7 +166,7 @@ class MainWorker : BroadcastReceiver() {
 
         val intent = Intent(context, NotificationWorker::class.java)
         intent.putExtra("eventName", event.title)
-        intent.putExtra("eventTime", event.time)
+        intent.putExtra("eventTime", event.time.toEpochMilli())
         intent.putExtra("departureTime", alarmTime + TimeUnit.MINUTES.toMillis(context.resources.getInteger(R.integer.forewarning_minutes).toLong()))
         if (directions == null) {
             intent.putExtra("mode", "walking")
