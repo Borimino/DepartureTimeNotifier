@@ -107,13 +107,24 @@ class MainWorker : BroadcastReceiver() {
                             Context.MODE_PRIVATE
                         )
                         val locationSearchRegexes =
-                            (sharedPreferences.getString("locationSearchRegex", "") ?: "").split(";")
+                            (sharedPreferences.getString("locationSearchRegex", "") ?: "").split(";").map { string ->
+                                Regex(string)
+                            }
                         val locationReplacees =
                             (sharedPreferences.getString("locationReplace", "") ?: "").split(";")
+                        Log.d(LOG_TAG, locationSearchRegexes.toString())
+                        Log.d(LOG_TAG, locationReplacees.toString())
                         locationSearchRegexes.forEachIndexed { index, value ->
                             if (locationReplacees.size > index) {
-                                event.location = event.location.replace(value, locationReplacees[index])
+                                event.location =
+                                    event.location.replace(value, locationReplacees[index])
+                            } else {
+                                event.location =
+                                    event.location.replace(value, "")
                             }
+                        }
+                        if (event.location.trim() == "") {
+                            return@thread
                         }
                         // If already saved
                         if (memoryHolder.alarmIds.containsKey(Pair(location, event))) {

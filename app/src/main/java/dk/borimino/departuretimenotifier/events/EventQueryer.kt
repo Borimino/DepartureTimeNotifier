@@ -23,6 +23,7 @@ object EventQueryer {
         val uriBuilder = CalendarContract.Instances.CONTENT_URI.buildUpon()
         ContentUris.appendId(uriBuilder, from.toEpochMilli())
         ContentUris.appendId(uriBuilder, to.toEpochMilli())
+        Log.d(LOG_TAG, "Getting events from $from to $to")
         val selection = "(${CalendarContract.Instances.EVENT_LOCATION} != '')"
         val cursor = contentResolver.query(uriBuilder.build(), EVENT_PROJECTION, selection, null, CalendarContract.Instances.BEGIN + " ASC")
             ?: return emptyList()
